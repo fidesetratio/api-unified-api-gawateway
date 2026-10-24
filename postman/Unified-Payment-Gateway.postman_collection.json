@@ -1,0 +1,2311 @@
+{
+  "info": {
+    "name": "Unified Payment Gateway",
+    "description": "Try the gateway by hand. Run the folders in order: 1 Health, 2 Admin (create a fake config and grant it), 3 Payments, then 4 PayPal config and 5 Error cases.\n\nBefore starting, set the environment variables baseUrl, adminKey, callerKey and clientId (see README.md in this folder).\n\nFolder 8 is the PayPal sandbox scenario step by step: create config, grant, submit payment, open payment_url, get status.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "configId",
+      "value": ""
+    },
+    {
+      "key": "paypalConfigId",
+      "value": ""
+    },
+    {
+      "key": "uniquecode",
+      "value": ""
+    },
+    {
+      "key": "xenditConfigId",
+      "value": ""
+    },
+    {
+      "key": "stripeConfigId",
+      "value": ""
+    },
+    {
+      "key": "midtransConfigId",
+      "value": ""
+    },
+    {
+      "key": "ppConfigId",
+      "value": ""
+    },
+    {
+      "key": "ppCode",
+      "value": ""
+    },
+    {
+      "key": "ppPaymentUrl",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1 Health",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "healthz"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 ok', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('ok'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness (database)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/readyz",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "readyz"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ready', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('ready'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 Admin - fake provider (for trying the flow without PayPal)",
+      "description": "Uses the admin key. The Fake Provider exists only when GATEWAY_ENV is not production.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminKey}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Create fake config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"fake\",\n  \"environment\": \"sandbox\",\n  \"name\": \"Fake {{$timestamp}}\",\n  \"allowed_currencies\": [\"USD\", \"IDR\"],\n  \"credentials\": { \"client_secret\": \"dev-only-secret\" }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('configId', j.id);",
+                  "pm.test('has id, no secrets in response', () => {",
+                  "  pm.expect(j.id).to.be.a('number');",
+                  "  pm.expect(pm.response.text()).to.not.include('dev-only-secret');",
+                  "  pm.expect(j.credentials_version).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grant the caller access to the config",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{configId}}/grants/{{clientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{configId}}",
+                "grants",
+                "{{clientId}}"
+              ]
+            },
+            "description": "clientId is the numeric id of your caller client: run  gatewayctl client list  to see it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 granted', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List configs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 and no secret fields', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.not.include('client_secret');",
+                  "  pm.expect(text).to.not.include('ciphertext');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Show one config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{configId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{configId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rotate credentials (same id, version 2)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"credentials\": { \"client_secret\": \"dev-only-secret-2\" }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{configId}}/credentials",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{configId}}",
+                "credentials"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('version bumped', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().credentials_version).to.be.above(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Disable the config",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"disabled\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{configId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{configId}}"
+              ]
+            },
+            "description": "While disabled, payments with this id answer 404 config_not_found. Run 'Enable the config' next to continue."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('disabled', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('disabled'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enable the config",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"active\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{configId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{configId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('active', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('active'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 Payments (caller key)",
+      "description": "Uses the caller key. Needs the config from folder 2 (configId) and a grant.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{callerKey}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Create payment",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// a fresh uniquecode for each new payment",
+                  "pm.collectionVariables.set('uniquecode', 'ORDER-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('exactly uniquecode, status, payment_url', () => {",
+                  "  pm.expect(Object.keys(j).sort()).to.eql(['payment_url', 'status', 'uniquecode']);",
+                  "  pm.expect(j.status).to.eql('PENDING');",
+                  "  pm.expect(j.uniquecode).to.eql(pm.collectionVariables.get('uniquecode'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{configId}},\n  \"uniquecode\": \"{{uniquecode}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Repeat the same request (replay: 200, same body)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{configId}},\n  \"uniquecode\": \"{{uniquecode}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            },
+            "description": "Run 'Create payment' first. An identical repeat returns 200 and does not call the provider again."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 replay', () => pm.response.to.have.status(200));",
+                  "pm.test('same payment', () => pm.expect(pm.response.json().uniquecode).to.eql(pm.collectionVariables.get('uniquecode')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same uniquecode, different amount (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{configId}},\n  \"uniquecode\": \"{{uniquecode}}\",\n  \"amount\": \"99.00\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 uniquecode_conflict', () => { pm.response.to.have.status(409); pm.expect(pm.response.json().error.code).to.eql('uniquecode_conflict'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/status/{{uniquecode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "status",
+                "{{uniquecode}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with the three fields', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.uniquecode).to.eql(pm.collectionVariables.get('uniquecode'));",
+                  "  pm.expect(j.status).to.be.oneOf(['PENDING', 'PAID', 'FAILED', 'EXPIRED', 'CANCELLED']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status of an unknown uniquecode (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/status/DOES-NOT-EXIST",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "status",
+                "DOES-NOT-EXIST"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 payment_not_found', () => { pm.response.to.have.status(404); pm.expect(pm.response.json().error.code).to.eql('payment_not_found'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 Admin - PayPal sandbox config",
+      "description": "Needs your own PayPal sandbox app: client_id and client_secret from developer.paypal.com, and a webhook id for the listener URL https://<your public host>/api/v1.0/webhooks/paypal. Edit the body below. PayPal does not accept IDR; use USD (or another PayPal currency). Payments through this config call the real PayPal sandbox.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{adminKey}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Create PayPal config",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"paypal\",\n  \"environment\": \"sandbox\",\n  \"name\": \"PayPal sandbox {{$timestamp}}\",\n  \"allowed_currencies\": [\"USD\"],\n  \"settings\": {\n    \"return_url\": \"https://your-shop.example/payment/return\",\n    \"cancel_url\": \"https://your-shop.example/payment/cancel\",\n    \"expiry_minutes\": 1440\n  },\n  \"credentials\": {\n    \"client_id\": \"PUT-YOUR-SANDBOX-CLIENT-ID\",\n    \"client_secret\": \"PUT-YOUR-SANDBOX-CLIENT-SECRET\"\n  },\n  \"webhook_secret\": {\n    \"webhook_id\": \"PUT-YOUR-WEBHOOK-ID\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('paypalConfigId', j.id);",
+                  "pm.test('webhook secret stored but never returned', () => {",
+                  "  pm.expect(j.has_webhook_secret).to.eql(true);",
+                  "  pm.expect(pm.response.text()).to.not.include('PUT-YOUR');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grant the caller access to the PayPal config",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{paypalConfigId}}/grants/{{clientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{paypalConfigId}}",
+                "grants",
+                "{{clientId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 granted', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Try to add IDR to the PayPal config (rejected)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"allowed_currencies\": [\"USD\", \"IDR\"] }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{paypalConfigId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{paypalConfigId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 PayPal does not accept IDR', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error.message).to.include('IDR'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create PayPal payment (caller key)",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{callerKey}}",
+                "type": "string"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('uniquecode', 'PP-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 with a PayPal approval URL', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('PENDING');",
+                  "  pm.expect(j.payment_url).to.include('paypal.com');",
+                  "});",
+                  "// Open payment_url in a browser, log in with a PayPal SANDBOX buyer account and approve.",
+                  "// PayPal then calls your webhook; the gateway captures and the status becomes PAID."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{paypalConfigId}},\n  \"uniquecode\": \"{{uniquecode}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            },
+            "description": "Calls the real PayPal sandbox. Not yet verified against the sandbox: see result/docs/paypal-research.md section 8."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 Error cases (each should be rejected)",
+      "item": [
+        {
+          "name": "No API key (401)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": 1, \"uniquecode\": \"X\", \"amount\": \"1.00\", \"currency\": \"USD\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 unauthorized', () => { pm.response.to.have.status(401); pm.expect(pm.response.json().error.code).to.eql('unauthorized'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin key used on /payments (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": 1, \"uniquecode\": \"X\", \"amount\": \"1.00\", \"currency\": \"USD\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Caller key used on /admin (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Config id you were not granted (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": 999999, \"uniquecode\": \"X\", \"amount\": \"1.00\", \"currency\": \"USD\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 config_not_permitted', () => { pm.response.to.have.status(403); pm.expect(pm.response.json().error.code).to.eql('config_not_permitted'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Amount as a JSON number instead of a string (400)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": {{configId}}, \"uniquecode\": \"BAD-1\", \"amount\": 10.5, \"currency\": \"USD\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 invalid_request', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error.code).to.eql('invalid_request'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown field in the body (400)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": {{configId}}, \"uniquecode\": \"BAD-2\", \"amount\": \"1.00\", \"currency\": \"USD\", \"extra\": true }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Currency not allowed by the config (422)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": {{configId}}, \"uniquecode\": \"BAD-3\", \"amount\": \"1.00\", \"currency\": \"EUR\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422 currency_not_supported', () => { pm.response.to.have.status(422); pm.expect(pm.response.json().error.code).to.eql('currency_not_supported'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhook with a forged signature (401, changes nothing)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "PAYPAL-AUTH-ALGO",
+                "value": "SHA256withRSA"
+              },
+              {
+                "key": "PAYPAL-CERT-URL",
+                "value": "https://api.sandbox.paypal.com/v1/notifications/certs/FAKE"
+              },
+              {
+                "key": "PAYPAL-TRANSMISSION-ID",
+                "value": "forged-1"
+              },
+              {
+                "key": "PAYPAL-TRANSMISSION-SIG",
+                "value": "AAAA"
+              },
+              {
+                "key": "PAYPAL-TRANSMISSION-TIME",
+                "value": "2026-01-01T00:00:00Z"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"id\":\"WH-FORGED\",\"event_type\":\"PAYMENT.CAPTURE.COMPLETED\",\"resource\":{\"id\":\"CAP-1\",\"status\":\"COMPLETED\",\"amount\":{\"currency_code\":\"USD\",\"value\":\"10.00\"},\"supplementary_data\":{\"related_ids\":{\"order_id\":\"NO-SUCH-ORDER\"}}}}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/webhooks/paypal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "webhooks",
+                "paypal"
+              ]
+            },
+            "description": "An order id that does not exist is acknowledged with 200 unknown_reference and nothing is written. To see a 401, use the order id of a real PayPal payment you created in folder 4: the signature then fails verification."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('never accepted as a payment', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "  pm.expect(pm.response.json().status).to.be.oneOf(['unknown_reference', 'not_verified']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 Xendit (Payment Sessions)",
+      "description": "Needs your own Xendit TEST secret key (Dashboard > Settings > API keys). Sessions accept IDR, PHP, VND, THB, SGD, MYR and USD and need HTTPS return URLs. The optional callback token is in Dashboard > Settings > Developers > Webhooks. Register https://<public host>/api/v1.0/webhooks/xendit for the session events payment_session.completed and payment_session.expired. Not yet run against a real Xendit account.",
+      "item": [
+        {
+          "name": "Create Xendit config",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"xendit\",\n  \"environment\": \"sandbox\",\n  \"name\": \"Xendit test {{$timestamp}}\",\n  \"allowed_currencies\": [\n    \"IDR\"\n  ],\n  \"settings\": {\n    \"return_url\": \"https://your-shop.example/payment/return\",\n    \"cancel_url\": \"https://your-shop.example/payment/cancel\",\n    \"expiry_minutes\": 60\n  },\n  \"credentials\": {\n    \"api_key\": \"PUT-YOUR-XENDIT-TEST-SECRET-KEY\"\n  },\n  \"webhook_secret\": {\n    \"callback_token\": \"PUT-YOUR-CALLBACK-TOKEN\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('xenditConfigId', j.id);",
+                  "pm.test('secrets never returned', () => { pm.expect(pm.response.text()).to.not.include('PUT-YOUR'); pm.expect(j.has_webhook_secret).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grant the caller access to the Xendit config",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{xenditConfigId}}/grants/{{clientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{xenditConfigId}}",
+                "grants",
+                "{{clientId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 granted', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Xendit payment (the sample request, in IDR)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('uniquecode', 'XD-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 with a Xendit checkout link', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('PENDING');",
+                  "  pm.expect(j.payment_url).to.match(/^https:\\/\\//);",
+                  "});",
+                  "// Open payment_url and pay with a Xendit TEST payment method. Xendit then calls your webhook;",
+                  "// the gateway reads the session and payment from Xendit and sets PAID only if the captured amount matches."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{xenditConfigId}},\n  \"uniquecode\": \"{{uniquecode}}\",\n  \"amount\": \"100000.00\",\n  \"currency\": \"IDR\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Status of the Xendit payment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/status/{{uniquecode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "status",
+                "{{uniquecode}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Try EUR on the Xendit config (rejected by the admin API)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{xenditConfigId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{xenditConfigId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"allowed_currencies\": [\"IDR\", \"EUR\"] }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400, Xendit sessions do not accept EUR', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error.message).to.include('EUR'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhook with a wrong callback token (changes nothing)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-callback-token",
+                "value": "definitely-wrong"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/webhooks/xendit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "webhooks",
+                "xendit"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"payment_session.completed\",\"business_id\":\"biz\",\"data\":{\"payment_session_id\":\"ps-does-not-exist\",\"status\":\"COMPLETED\"}}"
+            },
+            "description": "With the session id of a real payment from this folder, a wrong token gives 401. For an unknown session id the gateway answers 200 unknown_reference without reading anything from Xendit."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('never accepted as a payment', () => { pm.expect(pm.response.code).to.be.oneOf([200, 401]); pm.expect(pm.response.json().status).to.be.oneOf(['unknown_reference', 'not_verified']); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7 Stripe (Checkout Sessions)",
+      "description": "Needs your own Stripe TEST secret key (sk_test_...) and, for the webhook, the signing secret (whsec_...) of the endpoint https://<public host>/api/v1.0/webhooks/stripe, subscribed to checkout.session.completed, checkout.session.async_payment_succeeded, checkout.session.async_payment_failed and checkout.session.expired. Accepted currencies: USD EUR GBP CAD AUD NZD SGD CHF HKD SEK NOK DKK MYR JPY KRW (IDR is not accepted yet). Not yet run against a real Stripe account.",
+      "item": [
+        {
+          "name": "Create Stripe config",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"stripe\",\n  \"environment\": \"sandbox\",\n  \"name\": \"Stripe test {{$timestamp}}\",\n  \"allowed_currencies\": [\n    \"USD\"\n  ],\n  \"settings\": {\n    \"return_url\": \"https://your-shop.example/payment/return\",\n    \"cancel_url\": \"https://your-shop.example/payment/cancel\",\n    \"expiry_minutes\": 60\n  },\n  \"credentials\": {\n    \"api_key\": \"sk_test_PUT-YOUR-KEY\"\n  },\n  \"webhook_secret\": {\n    \"signing_secret\": \"whsec_PUT-YOUR-SIGNING-SECRET\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('stripeConfigId', j.id);",
+                  "pm.test('secrets never returned', () => { pm.expect(pm.response.text()).to.not.include('PUT-YOUR'); pm.expect(j.has_webhook_secret).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grant the caller access to the Stripe config",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{stripeConfigId}}/grants/{{clientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{stripeConfigId}}",
+                "grants",
+                "{{clientId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 granted', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Stripe payment (10.00 USD)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('uniquecode', 'ST-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 with a Stripe Checkout link', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('PENDING');",
+                  "  pm.expect(j.payment_url).to.include('checkout.stripe.com');",
+                  "});",
+                  "// Open payment_url and pay with Stripe's test card 4242 4242 4242 4242 (any future date, any CVC).",
+                  "// Stripe then calls your webhook; the gateway verifies the signature, reads the session and sets PAID."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{stripeConfigId}},\n  \"uniquecode\": \"{{uniquecode}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"USD\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Status of the Stripe payment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/status/{{uniquecode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "status",
+                "{{uniquecode}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Try IDR on the Stripe config (rejected)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{stripeConfigId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{stripeConfigId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"allowed_currencies\": [\"USD\", \"IDR\"] }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400, IDR not accepted yet', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error.message).to.include('IDR'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhook without a valid Stripe-Signature (changes nothing)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Stripe-Signature",
+                "value": "t=1700000000,v1=0000000000000000000000000000000000000000000000000000000000000000"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/webhooks/stripe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "webhooks",
+                "stripe"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"id\":\"evt_forged\",\"type\":\"checkout.session.completed\",\"data\":{\"object\":{\"id\":\"cs_test_unknown\"}}}"
+            },
+            "description": "An unknown session id gets 200 unknown_reference without any check. With the session id of a real payment from this folder the same request gets 401 not_verified, because the signature is wrong."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('never accepted as a payment', () => { pm.expect(pm.response.code).to.be.oneOf([200, 401]); pm.expect(pm.response.json().status).to.be.oneOf(['unknown_reference', 'not_verified']); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8 Midtrans (Snap)",
+      "description": "Needs your own Midtrans SANDBOX Server Key (Dashboard > Settings > Access Keys). IDR only. In the Midtrans dashboard (Settings > Configuration) set the Payment Notification URL to https://<public host>/api/v1.0/webhooks/midtrans. There is no separate webhook secret: notifications are signed with the Server Key. Pay in the sandbox with the simulators at simulator.sandbox.midtrans.com or the test card 4811 1111 1111 1114 (CVV 123, OTP 112233). Not yet run against a real Midtrans account.",
+      "item": [
+        {
+          "name": "Create Midtrans config",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"midtrans\",\n  \"environment\": \"sandbox\",\n  \"name\": \"Midtrans sandbox {{$timestamp}}\",\n  \"allowed_currencies\": [\n    \"IDR\"\n  ],\n  \"settings\": {\n    \"return_url\": \"https://your-shop.example/payment/return\",\n    \"cancel_url\": \"https://your-shop.example/payment/cancel\",\n    \"expiry_minutes\": 60\n  },\n  \"credentials\": {\n    \"server_key\": \"SB-Mid-server-PUT-YOUR-KEY\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('midtransConfigId', j.id);",
+                  "pm.test('server key never returned', () => pm.expect(pm.response.text()).to.not.include('PUT-YOUR-KEY'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Grant the caller access to the Midtrans config",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{midtransConfigId}}/grants/{{clientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{midtransConfigId}}",
+                "grants",
+                "{{clientId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 granted', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Midtrans payment (the sample request, in IDR)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('uniquecode', 'MT-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 with a Snap redirect link', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('PENDING');",
+                  "  pm.expect(j.payment_url).to.match(/^https:\\/\\/app\\.(sandbox\\.)?midtrans\\.com\\//);",
+                  "});",
+                  "// Open payment_url, choose a method and pay in the sandbox. Midtrans then posts a notification;",
+                  "// the gateway checks its signature, reads the order from Midtrans and sets PAID only if the amount matches."
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{midtransConfigId}},\n  \"uniquecode\": \"{{uniquecode}}\",\n  \"amount\": \"100000.00\",\n  \"currency\": \"IDR\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Status of the Midtrans payment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/status/{{uniquecode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "status",
+                "{{uniquecode}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "USD payment on the Midtrans config (rejected)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"id\": {{midtransConfigId}}, \"uniquecode\": \"MT-USD-1\", \"amount\": \"10.00\", \"currency\": \"USD\" }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('rejected: currency not allowed by the config', () => pm.expect(pm.response.code).to.be.oneOf([400, 422]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Notification with a wrong signature (changes nothing)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/webhooks/midtrans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "webhooks",
+                "midtrans"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"order_id\":\"no-such-order\",\"status_code\":\"200\",\"gross_amount\":\"100000.00\",\"transaction_status\":\"settlement\",\"signature_key\":\"00\"}"
+            },
+            "description": "An unknown order id gets 200 unknown_reference without reading anything. With the order id of a real payment (the gateway transaction id) the wrong signature gets 401 not_verified."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('never accepted as a payment', () => { pm.expect(pm.response.code).to.be.oneOf([200, 401]); pm.expect(pm.response.json().status).to.be.oneOf(['unknown_reference', 'not_verified']); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8 PayPal sandbox - step by step (tested scenario)",
+      "description": "The scenario that was run end to end against the PayPal sandbox. Run the requests in order, one at a time.\n\nBefore you start: environment variables baseUrl, adminKey (key of an admin client), callerKey (key of a caller client) and clientId (numeric id of that caller) must be set.\n\n1. Create config: put your sandbox client_id / client_secret in the body. return_url points at the gateway itself; {reference} is replaced by the payment id.\n2. Grant: lets the caller client use the config.\n3. Submit payment: copy payment_url from the response (also written to the Postman Console) and open it in a browser. Log in with a PayPal SANDBOX buyer account and approve.\n   PayPal sends the browser back to the gateway return endpoint, which asks PayPal for the real status, captures the order and shows {\"status\":\"paid\"}. The URL parameters are never trusted as proof.\n4. Get status: confirms PAID (the Webhooks are optional here; they only add a safety net).\n\nVariables written by this folder: ppConfigId, ppCode, ppPaymentUrl. Admin requests use adminKey; payment requests use callerKey (an admin key is rejected on /payments with 403).",
+      "item": [
+        {
+          "name": "8.1 Create PayPal config (admin key)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"paypal\",\n  \"environment\": \"sandbox\",\n  \"name\": \"paypal sandbox {{$timestamp}}\",\n  \"allowed_currencies\": [\"USD\"],\n  \"credentials\": {\n    \"client_id\": \"PUT-YOUR-SANDBOX-CLIENT-ID\",\n    \"client_secret\": \"PUT-YOUR-SANDBOX-CLIENT-SECRET\"\n  },\n  \"settings\": {\n    \"return_url\": \"{{baseUrl}}/api/v1.0/return?ref={reference}\",\n    \"cancel_url\": \"{{baseUrl}}/cancel\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs"
+              ]
+            },
+            "description": "Credentials are stored encrypted and never returned. PayPal accepts USD (not IDR). {reference} in return_url is filled with the payment id when a payment is created. webhook_secret.webhook_id is optional in this scenario."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setVar = (k, v) => { pm.collectionVariables.set(k, v); if (pm.environment.name) pm.environment.set(k, v); };",
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "setVar('ppConfigId', j.id);",
+                  "pm.test('secret never returned', () => pm.expect(pm.response.text()).to.not.include('PUT-YOUR'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.2 Grant the caller access to the config (admin key)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/admin/configs/{{ppConfigId}}/grants/{{clientId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "admin",
+                "configs",
+                "{{ppConfigId}}",
+                "grants",
+                "{{clientId}}"
+              ]
+            },
+            "description": "Expect 204. Without this grant, a payment fails with 403 config_not_permitted."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 granted', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.3 Submit payment (caller key) - then open payment_url in a browser",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": {{ppConfigId}},\n  \"uniquecode\": \"{{ppCode}}\",\n  \"amount\": \"10.00\",\n  \"currency\": \"USD\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "payments"
+              ]
+            },
+            "description": "Uses the caller key (shop client). A new uniquecode is generated on every send. After 201, open payment_url, log in with a PayPal sandbox buyer and approve; the browser returns to the gateway and shows the status."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setVar = (k, v) => { pm.collectionVariables.set(k, v); if (pm.environment.name) pm.environment.set(k, v); };",
+                  "setVar('ppCode', 'PP-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const setVar = (k, v) => { pm.collectionVariables.set(k, v); if (pm.environment.name) pm.environment.set(k, v); };",
+                  "pm.test('201 with an approval URL', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.status).to.eql('PENDING');",
+                  "  pm.expect(j.payment_url).to.include('paypal.com');",
+                  "  setVar('ppPaymentUrl', j.payment_url);",
+                  "});",
+                  "console.log('OPEN THIS URL IN A BROWSER AND APPROVE: ' + pm.response.json().payment_url);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.4 Get status (caller key)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{callerKey}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1.0/status/{{ppCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1.0",
+                "status",
+                "{{ppCode}}"
+              ]
+            },
+            "description": "PENDING until the buyer approved and the gateway confirmed it with PayPal; then PAID."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with the code and a status', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const j = pm.response.json();",
+                  "  pm.expect(j.uniquecode).to.eql(pm.variables.get('ppCode'));",
+                  "  pm.expect(['PENDING', 'PAID']).to.include(j.status);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

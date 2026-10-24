@@ -1,0 +1,24 @@
+# Build output and Go temp dirs
+bin/
+.gotmp/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Local secrets and configuration (never commit these)
+.env
+.env.*
+!.env.example
+master.key
+*.key
+*.pem
+
+# Logs
+*.log
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
